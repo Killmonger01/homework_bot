@@ -1,3 +1,5 @@
+from http import HTTPStatus
+
 import os
 import telegram
 import logging
@@ -12,9 +14,9 @@ load_dotenv()
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+ENDPOINT = os.getenv('ENDPOINT')
 
 RETRY_PERIOD = 600
-ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
 
@@ -24,11 +26,6 @@ HOMEWORK_VERDICTS = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO,
-    filename='main.log')
-
 
 class TheAnswerIsNot200Error(Exception):
     """Ответ сервера не равен 200."""
@@ -36,14 +33,10 @@ class TheAnswerIsNot200Error(Exception):
 
 def check_tokens():
     """Проверяем наличие токенов."""
-    if PRACTICUM_TOKEN is None:
-        logging.critical('Нет Практикум токена!')
-        return False
-    elif TELEGRAM_TOKEN is None:
-        logging.critical('Нет Телеграмм токена!')
-        return False
-    elif TELEGRAM_CHAT_ID is None:
-        logging.critical('Нет ID чата!')
+    if all([PRACTICUM_TOKEN is None,
+            TELEGRAM_TOKEN is None,
+            TELEGRAM_CHAT_ID is None]):
+        logging.critical('Нет важной константы!')
         return False
     else:
         return True
@@ -54,7 +47,7 @@ def send_message(bot, message):
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
         logging.debug(
-            f'Сообщение в Telegram отправлено: {message}')
+            f'начали отправку сообщения в Telegram: {message}')
     except telegram.TelegramError as telegram_error:
         logging.error(f'сообщение не отправилось {telegram_error}')
 
@@ -63,7 +56,7 @@ def get_api_answer(timestamp):
     """Получение данных с API Яндекса."""
     try:
         api = requests.get(ENDPOINT, headers=HEADERS, params=timestamp)
-        if api.status_code != 200:
+        if api.status_code != HTTPStatus.OK:
             logging.error('API не равен 200')
             raise TheAnswerIsNot200Error
         ((f'код ответа {api.status_code}'))
@@ -77,7 +70,7 @@ def check_response(response):
     if not isinstance(response, dict):
         logging.error('API ответ это не словарь')
         raise TypeError('response это не словарь')
-    if 'homeworks' not in response:
+    if 'homeworks' and 'current_date' not in response:
         logging.error('ключа homeworks нет в response')
         raise KeyError('ключа homeworks нет в response')
     if not isinstance(response.get('homeworks'), list):
@@ -88,28 +81,23 @@ def check_response(response):
 
 def parse_status(homework):
     """Сообщение в телеграмм."""
-    if 'status' not in homework:
+    if 'status' and 'homework_name' not in homework:
         logging.error(
-            'Ошибка пустое значение status')
-        raise KeyError('нет ключа status')
-    if 'homework_name' not in homework:
-        logging.error(
-            'Ошибка пустое значение homework_name:')
-        raise KeyError('нет ключа homework_name')
-
-    homework_name = homework['homework_name']
-    status = homework['status']
+            'Ошибка пустое значение status или homework_name')
+        raise KeyError('нет ключа status или homework_name')
+    homework_name = homework.get('homework_name')
+    status = homework.get('status')
     if status not in HOMEWORK_VERDICTS:
         logging.error(
             'status не в HOMEWORK_VERDICTS')
         raise ValueError('status не в HOMEWORK_VERDICTS')
-    verdict = HOMEWORK_VERDICTS[status]
+    verdict = HOMEWORK_VERDICTS.get(status)
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def main():
     """Основная логика работы бота."""
-    if check_tokens() is False:
+    if not check_tokens():
         SystemExit.exit()
 
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
@@ -127,13 +115,17 @@ def main():
                 time.sleep(RETRY_PERIOD)
             logging.info(
                 'Изменений нет, ждем 10 минут и проверяем API')
-            time.sleep(RETRY_PERIOD)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             send_message(bot, message)
             logging.error(message)
+        finally:
             time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':
+    logging.basicConfig(format=('%(asctime)s - %(name)s'
+                                '- %(levelname)s - %(message)s'),
+                        level=logging.INFO,
+                        filename='main.log')
     main()
