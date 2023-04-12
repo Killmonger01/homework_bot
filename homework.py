@@ -7,8 +7,7 @@ import requests
 import telegram
 from dotenv import load_dotenv
 
-from .permissions import TheAnswerIsNot200Error
-
+from permissions import TheAnswerIsNot200Error
 
 load_dotenv()
 
