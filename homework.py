@@ -1,11 +1,13 @@
+import logging
+import os
+import time
 from http import HTTPStatus
 
-import os
-import telegram
-import logging
-import time
 import requests
+import telegram
 from dotenv import load_dotenv
+
+from .permissions import TheAnswerIsNot200Error
 
 
 load_dotenv()
@@ -27,19 +29,11 @@ HOMEWORK_VERDICTS = {
 }
 
 
-class TheAnswerIsNot200Error(Exception):
-    """Ответ сервера не равен 200."""
-
-
 def check_tokens():
     """Проверяем наличие токенов."""
-    if all([PRACTICUM_TOKEN is None,
-            TELEGRAM_TOKEN is None,
-            TELEGRAM_CHAT_ID is None]):
+    if all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)) is False:
         logging.critical('Нет важной константы!')
-        return False
-    else:
-        return True
+    return all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID))
 
 
 def send_message(bot, message):
@@ -98,6 +92,7 @@ def parse_status(homework):
 def main():
     """Основная логика работы бота."""
     if not check_tokens():
+        logging.info('Нет важной Константы! выключаем прогу')
         SystemExit.exit()
 
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
